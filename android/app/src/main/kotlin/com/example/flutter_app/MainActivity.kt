@@ -1,7 +1,11 @@
 package com.example.flutter_app
 
+import android.app.PendingIntent
 import android.content.*
+import android.nfc.NfcAdapter
 import android.nfc.NfcManager
+import android.nfc.Tag
+import android.nfc.tech.Ndef
 import android.os.BatteryManager
 import android.os.Build.VERSION
 import android.os.Build.VERSION_CODES
@@ -12,12 +16,16 @@ import io.flutter.plugin.common.EventChannel.EventSink
 import io.flutter.plugin.common.MethodChannel
 
 
-class MainActivity: FlutterActivity() {
+class MainActivity: FlutterActivity(), Listener {
 
         val BATTERY_CHANNEL = "samples.flutter.io/battery"
         val CHARGING_CHANNEL = "samples.flutter.io/charging"
 
-        override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+    val TAG = MainActivity::class.java.simpleName
+    private var isDialogDisplayed = false
+    private var isWrite = false
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
             EventChannel(flutterEngine.dartExecutor, CHARGING_CHANNEL).setStreamHandler(
                     object : EventChannel.StreamHandler {
                         private var chargingStateChangeReceiver: BroadcastReceiver? = null
@@ -91,8 +99,58 @@ class MainActivity: FlutterActivity() {
             val nfcState: Boolean
             val manager = getSystemService(Context.NFC_SERVICE) as NfcManager
             val adapter = manager.defaultAdapter
-            nfcState = adapter.isEnabled;
-            return nfcState;
+            if(adapter!=null) {
+                nfcState = adapter.isEnabled;
+                buildNFC(adapter)
+                return nfcState;
+            }else{
+                return false;
+            }
         }
+
+
+
+  open fun buildNFC(adapter: NfcAdapter) {
+      val tagDetected = IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED)
+      val ndefDetected = IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED)
+      val techDetected = IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED)
+      val nfcIntentFilter = arrayOf(techDetected, tagDetected, ndefDetected)
+
+      val pendingIntent = PendingIntent.getActivity(
+              this, 0, Intent(this, this.javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0)
+      if(adapter!=null){
+          adapter.enableForegroundDispatch(this,pendingIntent,nfcIntentFilter,null)
+      }
+
+  }
+
+    override fun onNewIntent(intent: Intent) {
+        val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG)     
+        if(tag!=null){
+          val ndef=  Ndef.get(tag);
+            NfcRead(ndef)
+        }
+
     }
+    open fun NfcRead(ndef: Ndef) {
+       var mNfcReadFragment = fragmentManager.findFragmentByTag(NFCReadFragment.TAG) as NFCReadFragment
+
+        if (mNfcReadFragment == null) {
+            mNfcReadFragment = NFCReadFragment.newInstance()
+        }
+        mNfcReadFragment.show(fragmentManager, NFCReadFragment.TAG)
+        mNfcReadFragment = fragmentManager.findFragmentByTag(NFCReadFragment.TAG) as NFCReadFragment
+        mNfcReadFragment.onNfcDetected(ndef)
+
+    }
+
+    override fun onDialogDisplayed() {
+        isDialogDisplayed = true
+    }
+
+    override fun onDialogDismissed() {
+        isDialogDisplayed = false
+        isWrite = false
+    }
+}
 
